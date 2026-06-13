@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta charset="UTF-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="计时器">
+<link rel="apple-touch-icon" href="timer-logo.png">
+<style>
+  :root {
+    --bg-color: #F2F2F7; 
+    --card-bg: #FFFFFF;
+    --accent-blue: #007AFF;
+    --google-red: #EA4335;
+    --google-green: #34A853;
+    --text-main: #1C1C1E;
+    --text-sec: #8E8E93;
+  }
+  
+  /* 基础布局：彻底锁死，防止跳动 */
+  html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    position: fixed; 
+    
+    background: var(--bg-color);
+    color: var(--text-main); 
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+
+    /* Flex 布局确保内容整体居中 */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* 这行决定了所有子元素（timer, buttons）水平居中 */
+  }
+
+  /* 1. 增加顶部留白（呼吸感） */
+  .header-space { 
+    height: 15vh; 
+    width: 100%; /* 占满宽度防止塌陷 */
+  }
+
+  /* 2. 计时器样式：Mono 字体确保数字宽度一致，不会左右晃动 */
+  #timer { 
+    font-size: 64px; 
+    font-family: "SF Mono", "Menlo", monospace; 
+    font-variant-numeric: tabular-nums;
+    font-weight: 200; 
+    margin-bottom: 50px; 
+    letter-spacing: -1px;
+    text-align: center; /* 确保文字内部也居中 */
+    width: 100%;
+  }
+
+  /* 3. 按钮容器 */
+  .btns-container { 
+    display: flex; 
+    gap: 3vw; 
+    justify-content: center; 
+    align-items: center;
+    min-height: 60px;
+    width: 100%;
+    margin-bottom: calc(30px + env(safe-area-inset-bottom)); /* 留出 iOS 底部横条位置 */
+  }
+
+  button { 
+    border: none; 
+    padding: 14px 0; /* 左右 padding 改为 0，靠 width 控制 */
+    border-radius: 14px; 
+    font-size: 17px; 
+    font-weight: 600; 
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+  button:active { transform: scale(0.92); opacity: 0.8; }
+
+  /* 按钮宽度保持你的设定 */
+  .btn-start { background: var(--accent-blue); color: white; width: 80vw;}
+  .btn-stop { background: var(--google-red); color: white; width: 25vw;} /* 稍微调宽一点，防止太窄点不到 */
+  .btn-lap { background: var(--google-green); color: white; width: 55vw;}
+  .btn-reset { background: var(--google-red); color: white; width: 25vw;}
+  .btn-resume { background: var(--google-green); color: white; width: 55vw;}
+
+  /* 4. 排名列表区域 */
+  #lapList { 
+    width: 88%; 
+    flex: 1; /* 占据剩余所有高度 */
+    overflow-y: auto; 
+    background: var(--card-bg); 
+    border-radius: 20px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.02);
+    padding: 8px 16px;
+    -webkit-overflow-scrolling: touch; 
+    box-sizing: border-box; /* 确保 padding 不撑开容器 */
+    margin-bottom: 40px; 
+  }
+
+  .lap-item { 
+    display: flex; 
+    justify-content: space-between; 
+    padding: 18px 8px; 
+    border-bottom: 0.5px solid #F2F2F7; 
+    font-family: "SF Mono";
+    font-variant-numeric: tabular-nums; 
+    font-size: 16px;
+  }
+  .lap-index { color: var(--text-sec); font-family: -apple-system; }
+</style>
+</head>
+<body>
+  <div class="header-space"></div>
+  <div id="timer">00:00.00</div>
+  
+  <div id="lapList"></div>
+
+  <div id="controls" class="btns-container">
+    <button class="btn-start" onclick="startTimer()">开始</button>
+  </div>
+
+<script>
+let start, id, elapsed = 0, lapCount = 0;
+const timerEl = document.getElementById('timer');
+const ctrlEl = document.getElementById('controls');
+const listEl = document.getElementById('lapList');
+
+function update() {
+    elapsed = Date.now() - start;
+    timerEl.innerText = format(elapsed);
+}
+
+function format(ms) {
+    let s = Math.floor(ms / 1000);
+    let m = Math.floor(s / 60);
+    // 取毫秒的前两位
+    let msPart = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+    let sPart = (s % 60).toString().padStart(2, '0');
+    let mPart = m.toString().padStart(2, '0');
+    return mPart + ":" + sPart + "." + msPart;
+}
+
+// 状态1：点击开始
+function startTimer() {
+    start = Date.now() - elapsed;
+    id = setInterval(update, 30);
+    renderRunningUI();
+}
+
+// 状态2：点击停止（暂停）
+function stopTimer() {
+    clearInterval(id);
+    id = null;
+    renderPausedUI();
+}
+
+// 渲染：运行中界面
+function renderRunningUI() {
+    ctrlEl.innerHTML = `
+      <button class="btn-lap" onclick="addLap()">排名</button>
+      <button class="btn-stop" onclick="stopTimer()">停止</button>
+    `;
+}
+
+// 渲染：暂停中界面
+function renderPausedUI() {
+    ctrlEl.innerHTML = `
+      <button class="btn-reset" onclick="resetAll()">重置</button>
+      <button class="btn-resume" onclick="startTimer()">继续</button>
+    `;
+}
+
+// 排名逻辑
+function addLap() {
+    if (elapsed === 0) return;
+    lapCount++;
+    const item = document.createElement('div');
+    item.className = 'lap-item';
+    // 采用字符串拼接，避开反斜杠转义问题
+    item.innerHTML = '<span class="lap-index">第 ' + lapCount + ' 名</span><span>' + format(elapsed) + '</span>';
+    listEl.appendChild(item);
+    listEl.scrollTo({ top: listEl.scrollHeight, behavior: 'smooth' });
+}
+
+// 重置逻辑
+function resetAll() {
+    clearInterval(id);
+    id = null;
+    elapsed = 0;
+    lapCount = 0;
+    timerEl.innerText = '00:00.00';
+    listEl.innerHTML = '';
+    ctrlEl.innerHTML = '<button class="btn-start" onclick="startTimer()">开始</button>';
+}
+</script>
+</body>
+</html>
